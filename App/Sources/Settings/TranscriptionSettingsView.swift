@@ -25,25 +25,53 @@ struct SettingsView: View {
 
 struct TranscriptionSettingsView: View {
     @AppStorage(TranscriptionPreferences.engineKey) private var engine: TranscriptionEngineKind = .appleSpeech
+    @AppStorage(TranscriptionPreferences.localeKey) private var localeChoice = "system"
     @ObservedObject private var parakeet = ParakeetModelStore.shared
+    @ObservedObject private var qwen = Qwen3ModelStore.shared
     @State private var apple: AppleSpeechEngine.Availability?
     @State private var confirmRemove = false
+    @State private var confirmRemoveQwen = false
 
-    private let locale = Locale.current
+    private var locale: Locale { localeChoice == "id-ID" ? Locale(identifier: "id-ID") : .current }
+    private var indonesian: Bool { locale.language.languageCode?.identifier == "id" }
+    private var engines: [TranscriptionEngineKind] {
+        indonesian ? [.appleSpeech, .qwen3, .parakeet] : TranscriptionEngineKind.selectable
+    }
 
     var body: some View {
         Form {
             Section {
+                Picker("Language", selection: $localeChoice) {
+                    Text("Mac language (\(Locale.current.languageName))").tag("system")
+                    Text("Bahasa Indonesia").tag("id-ID")
+                }
                 Picker("Transcribe with", selection: $engine) {
-                    ForEach(TranscriptionEngineKind.allCases) { Text($0.displayName).tag($0) }
+                    ForEach(engines) { kind in
+                        Text(kind == .qwen3 ? "Bahasa Indonesia" : kind.displayName).tag(kind)
+                    }
                 }
                 .pickerStyle(.radioGroup)
             } footer: {
-                Text("Both run on this Mac, in \(locale.languageName). Your recordings are never uploaded to transcribe them.")
+                Text(indonesian
+                     ? "Choose Bahasa Indonesia to use the model below. Parakeet doesn't transcribe Indonesian. Audio stays on this Mac."
+                     : "Both run on this Mac, in \(locale.languageName). Your recordings are never uploaded to transcribe them.")
                     .foregroundStyle(.secondary)
             }
 
             Section("Apple Speech") { appleStatus }
+
+            if indonesian {
+                Section {
+                    qwenRow
+                    qwenProgress
+                } header: {
+                    Text("Bahasa Indonesia")
+                } footer: {
+                    Text("Parakeet and Apple's on-device transcriber don't cover Indonesian, so Slice uses a separate model that stays on this Mac. It's downloaded once, only when you ask.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             Section {
                 parakeetRow
@@ -61,9 +89,22 @@ struct TranscriptionSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .task { apple = await AppleSpeechEngine.availability(for: locale) }
-        .onAppear { parakeet.refresh() }
+        .task(id: localeChoice) { apple = await AppleSpeechEngine.availability(for: locale) }
+        .onAppear {
+            parakeet.refresh()
+            qwen.refresh()
+            if indonesian, engine == .parakeet { engine = .qwen3 }
+        }
+        .onChange(of: localeChoice) {
+            if indonesian, engine == .parakeet { engine = .qwen3 }
+            if !indonesian, engine == .qwen3 { engine = .appleSpeech }
+        }
         .animation(.smooth(duration: 0.25), value: parakeet.state)
+        .confirmationDialog("Delete the Bahasa Indonesia model?", isPresented: $confirmRemoveQwen) {
+            Button("Delete Model", role: .destructive) { qwen.remove() }
+        } message: {
+            Text("This frees \(Self.size(qwen.installedBytes)). Transcripts you already have are kept. Using Bahasa Indonesia again needs the \(Self.size(Qwen3Model.downloadBytes)) download.")
+        }
         .confirmationDialog("Delete the Parakeet AI model?", isPresented: $confirmRemove) {
             Button("Delete Model", role: .destructive) { parakeet.remove() }
         } message: {
@@ -154,10 +195,60 @@ struct TranscriptionSettingsView: View {
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             if !ParakeetModel.languages.contains(locale.language.languageCode?.identifier ?? "") {
-                Label("Parakeet AI doesn't support \(locale.languageName). It covers 25 European languages.",
+                Label(indonesian
+                      ? "Parakeet AI doesn't support Bahasa Indonesia. It covers 25 European languages. Indonesian uses its own model, downloaded once."
+                      : "Parakeet AI doesn't support \(locale.languageName). It covers 25 European languages.",
                       systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
             }
+        }
+    }
+
+    private var qwenRow: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(Qwen3Model.displayName)
+                Text(qwenDetail).font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
+            }
+            Spacer()
+            switch qwen.state {
+            case .downloading, .verifying:
+                Button("Cancel") { qwen.cancel() }
+            case .loading:
+                ProgressView().controlSize(.small)
+            case .notInstalled:
+                Button(qwen.stagedBytes > 0 ? "Resume Download" : "Download") { qwen.download() }
+                    .buttonStyle(.borderedProminent)
+            case .installed:
+                Button("Delete…") { confirmRemoveQwen = true }
+            case .failed:
+                Button("Try Again") { qwen.download() }.buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    private var qwenDetail: String {
+        switch qwen.state {
+        case .notInstalled:
+            return qwen.stagedBytes > 0
+                ? "Not downloaded · \(Self.size(qwen.stagedBytes)) of \(Self.size(Qwen3Model.downloadBytes)) kept from last time"
+                : "Not downloaded · \(Self.size(Qwen3Model.downloadBytes)) download"
+        case let .downloading(received, total): return "Downloading… \(Self.size(received)) of \(Self.size(total))"
+        case .verifying: return "Checking the downloaded files…"
+        case .loading: return "Loading the model…"
+        case .installed: return "On this Mac · \(Self.size(qwen.installedBytes))"
+        case let .failed(message): return message
+        }
+    }
+
+    @ViewBuilder private var qwenProgress: some View {
+        switch qwen.state {
+        case let .downloading(received, total):
+            ProgressView(value: Double(received), total: Double(max(total, 1)))
+        case .verifying:
+            ProgressView().progressViewStyle(.linear)
+        default:
+            EmptyView()
         }
     }
 

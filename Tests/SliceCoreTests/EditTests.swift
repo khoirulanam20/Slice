@@ -17,6 +17,19 @@ final class EditTests: XCTestCase {
         return p
     }
 
+    func testMoveClipKeepsZoomWithItsTakeAndLeavesMusic() {
+        var p = twoClips()
+        p.zoomBlocks = [ZoomBlock(start: 11, end: 14)]
+        p.music = [MusicClip(source: .library("bed"), name: "Bed", start: 1, end: 3, sourceDuration: 10)]
+        p.moveClip(from: 1, to: 0)
+        XCTAssertEqual(p.clips.map(\.screenFile), ["b", "a"])
+        XCTAssertEqual(p.clipStarts, [0, 5])
+        XCTAssertEqual(p.zoomBlocks[0].start, 1, accuracy: 1e-6)
+        XCTAssertEqual(p.zoomBlocks[0].end, 4, accuracy: 1e-6)
+        XCTAssertEqual(p.music[0].start, 1)
+        XCTAssertEqual(p.music[0].end, 3)
+    }
+
     func testNoCutsMatchesClipLengths() {
         let p = twoClips()
         XCTAssertEqual(p.duration, 15)

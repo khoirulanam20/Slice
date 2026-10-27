@@ -113,14 +113,32 @@ public enum CameraLayoutResolver {
             rect = CGRect(x: (output.width - w) / 2, y: (output.height - h) / 2, width: w, height: h)
         case .fullscreen:
             return CameraState(rect: CGRect(origin: .zero, size: output), cornerRadius: 0, opacity: 1, zoomFollow: 0)
-        case let .split(side):
-            return split(side, output: output, style: style, contentAspect: contentAspect ?? 16 / 10)
+        case let .split(side, share):
+            return split(side, share: share, output: output, style: style, contentAspect: contentAspect ?? 16 / 10)
         }
         let radius = min(rect.width, rect.height) * style.cameraCornerRadius
         return CameraState(rect: rect, cornerRadius: radius, opacity: 1)
     }
 
-    private static func split(_ side: SplitSide, output: CGSize, style: FrameStyle, contentAspect: CGFloat) -> CameraState {
+    /// The automatic split's camera fraction, so a drag can start without the picture jumping.
+    public static func measuredSplitShare(_ side: SplitSide, output: CGSize, style: FrameStyle, contentAspect: CGFloat) -> Double {
+        let state = state(for: .split(side, share: nil), output: output, style: style, contentAspect: contentAspect)
+        let screen = ScreenSlot.rect(state.screenSlot, in: output)
+        let horizontal = output.width >= output.height
+        let cam = horizontal ? state.rect.width : state.rect.height
+        let scr = horizontal ? screen.width : screen.height
+        let total = cam + scr
+        guard total > 0 else { return 0.35 }
+        return CameraLayout.clampSplitShare(cam / total)
+    }
+
+    private static func split(_ side: SplitSide, share explicit: Double?, output: CGSize, style: FrameStyle,
+                              contentAspect: CGFloat) -> CameraState {
+        if let explicit { return fittedSplit(side, share: explicit, output: output, style: style, contentAspect: contentAspect) }
+        return automaticSplit(side, output: output, style: style, contentAspect: contentAspect)
+    }
+
+    private static func automaticSplit(_ side: SplitSide, output: CGSize, style: FrameStyle, contentAspect: CGFloat) -> CameraState {
         let base = min(output.width, output.height)
         let margin = base * max(style.effectivePadding, 0.02)
         let avail = CGRect(origin: .zero, size: output).insetBy(dx: margin, dy: margin)
@@ -154,6 +172,65 @@ public enum CameraLayoutResolver {
             camera = CGRect(x: x, y: first ? y : y + screenHeight, width: width, height: cameraHeight)
             screen = CGRect(x: x, y: first ? y + cameraHeight : y, width: width, height: screenHeight)
         }
+        return placedSplit(camera: camera, screen: screen, side: side, output: output, style: style)
+    }
+
+    /// Camera takes `share` of the pair; the screen keeps its aspect. Both shrink together if they don't fit.
+    private static func fittedSplit(_ side: SplitSide, share raw: Double, output: CGSize, style: FrameStyle,
+                                    contentAspect: CGFloat) -> CameraState {
+        let share = CameraLayout.clampSplitShare(raw)
+        let base = min(output.width, output.height)
+        let margin = base * max(style.effectivePadding, 0.02)
+        let avail = CGRect(origin: .zero, size: output).insetBy(dx: margin, dy: margin)
+        let aspect = min(max(contentAspect, 0.3), 4)
+        let first = side == .left
+        let camera: CGRect, screen: CGRect
+        if output.width >= output.height {
+            var screenWidth = avail.width * (1 - share)
+            var cameraWidth = avail.width * share
+            var height = screenWidth / aspect
+            if height > avail.height {
+                height = avail.height
+                screenWidth = height * aspect
+                cameraWidth = screenWidth * share / (1 - share)
+            }
+            var pair = cameraWidth + screenWidth
+            if pair > avail.width {
+                let scale = avail.width / pair
+                cameraWidth *= scale
+                screenWidth *= scale
+                height *= scale
+                pair *= scale
+            }
+            let x = avail.minX + (avail.width - pair) / 2, y = avail.minY + (avail.height - height) / 2
+            camera = CGRect(x: first ? x : x + screenWidth, y: y, width: cameraWidth, height: height)
+            screen = CGRect(x: first ? x + cameraWidth : x, y: y, width: screenWidth, height: height)
+        } else {
+            var screenHeight = avail.height * (1 - share)
+            var cameraHeight = avail.height * share
+            var width = screenHeight * aspect
+            if width > avail.width {
+                width = avail.width
+                screenHeight = width / aspect
+                cameraHeight = screenHeight * share / (1 - share)
+            }
+            var pair = cameraHeight + screenHeight
+            if pair > avail.height {
+                let scale = avail.height / pair
+                cameraHeight *= scale
+                screenHeight *= scale
+                width *= scale
+                pair *= scale
+            }
+            let x = avail.minX + (avail.width - width) / 2, y = avail.minY + (avail.height - pair) / 2
+            camera = CGRect(x: x, y: first ? y : y + screenHeight, width: width, height: cameraHeight)
+            screen = CGRect(x: x, y: first ? y + cameraHeight : y, width: width, height: screenHeight)
+        }
+        return placedSplit(camera: camera, screen: screen, side: side, output: output, style: style)
+    }
+
+    private static func placedSplit(camera: CGRect, screen: CGRect, side: SplitSide, output: CGSize, style: FrameStyle) -> CameraState {
+        let first = side == .left
         let slot = CGRect(x: screen.minX / output.width, y: screen.minY / output.height,
                           width: screen.width / output.width, height: screen.height / output.height)
         let edge: CGRectEdge = output.width >= output.height ? (first ? .maxXEdge : .minXEdge) : (first ? .maxYEdge : .minYEdge)

@@ -110,6 +110,39 @@ extension EditorModel {
         return max(s, space.lowerBound) ... min(e, space.upperBound)
     }
 
+    var splitContentAspect: CGFloat {
+        let i = project.clipStarts.lastIndex { $0 <= time } ?? 0
+        guard project.clips.indices.contains(i), project.clips[i].screenPixelSize.height > 0 else { return 16 / 10 }
+        let size = project.clips[i].screenPixelSize
+        return size.width / size.height
+    }
+
+    func cameraLayout(at t: Double) -> (layout: CameraLayout, blockID: UUID?) {
+        if let b = project.cameraBlocks.filter({ $0.start <= t && t < $0.end }).max(by: { $0.start < $1.start }) {
+            return (b.layout, b.id)
+        }
+        return (project.defaultCamera, nil)
+    }
+
+    func setSplitShare(_ share: Double, blockID: UUID?, side: SplitSide) {
+        let layout = CameraLayout.split(side, share: CameraLayout.clampSplitShare(share))
+        if let blockID {
+            selection = .camera(blockID)
+            updateCamera(blockID, layout: layout)
+        } else {
+            project.defaultCamera = layout
+        }
+    }
+
+    func moveClip(from: Int, to: Int) {
+        guard project.clips.indices.contains(from), project.clips.indices.contains(to), from != to else { return }
+        let id = project.clips[from].id
+        var p = project
+        p.moveClip(from: from, to: to)
+        project = p
+        if let i = project.clips.firstIndex(where: { $0.id == id }) { seek(to: project.clipStarts[i]) }
+    }
+
     func updateCamera(_ id: UUID, layout: CameraLayout) {
         guard let i = project.cameraBlocks.firstIndex(where: { $0.id == id }) else { return }
         project.cameraBlocks[i].layout = layout

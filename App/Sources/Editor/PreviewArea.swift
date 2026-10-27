@@ -93,7 +93,7 @@ struct PreviewHeader: View {
         case .zoom: editor.selectedZoom?.followsCursor == true ? "The zoom follows the pointer."
             : editor.aimsOnCanvas ? "Drag the box to aim the zoom." : "Drag the picture to aim the zoom."
         case .camera: "Choose a layout on the right."
-        case .section: "Delete removes this section. Drag its edges to trim."
+        case .section: "Drag the take to reorder it. Drag its edges to trim."
         case .music: "Drag to move the music, its edges to trim. Delete removes it."
         case .transition: "Drag its edges to change the length. Delete removes it."
         case .keyframe: "Pose the phone in the preview. Drag the keyframe to retime it. Delete removes it."
@@ -137,6 +137,7 @@ struct PreviewArea: View {
                     if editor.isEditingSpotlight, let block = editor.selectedSpotlight {
                         SpotlightOverlay(editor: editor, block: block, viewSize: geo.size)
                     }
+                    SplitSeamOverlay(editor: editor, viewSize: geo.size)
                     if editor.isEditingZoomFocus, case let .zoom(id) = editor.selection,
                        let block = editor.project.zoomBlocks.first(where: { $0.id == id }) {
                         if block.kind == .liquidGlass || editor.aimsOnCanvas {
@@ -146,6 +147,7 @@ struct PreviewArea: View {
                         }
                     }
                 }
+                .coordinateSpace(name: "previewCanvas")
             }
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.stroke))
@@ -273,5 +275,49 @@ struct ZoomPanOverlay: View {
                 }
                 .onEnded { _ in origin = nil })
             .accessibilityLabel("Zoom framing")
+    }
+}
+
+struct SplitSeamOverlay: View {
+    @ObservedObject var editor: EditorModel
+    let viewSize: CGSize
+
+    var body: some View {
+        let active = editor.cameraLayout(at: editor.time)
+        if case let .split(side, _) = active.layout {
+            let output = editor.previewSize
+            let scene = RenderScene(project: editor.project, output: output, cursor: editor.cursorTrack)
+            let state = scene.cameraState(at: editor.time, followingZoom: false)
+            if state.seam > 0.4, !state.isHidden, output.width > 0 {
+                seam(side: side, state: state, output: output, blockID: active.blockID)
+            }
+        }
+    }
+
+    private func seam(side: SplitSide, state: CameraState, output: CGSize, blockID: UUID?) -> some View {
+        let k = viewSize.width / output.width
+        let cam = state.rect
+        let screen = ScreenSlot.rect(state.screenSlot, in: output)
+        let horizontal = output.width >= output.height
+        let pairMin = (horizontal ? min(cam.minX, screen.minX) : min(cam.minY, screen.minY)) * k
+        let pairMax = (horizontal ? max(cam.maxX, screen.maxX) : max(cam.maxY, screen.maxY)) * k
+        let seam = (horizontal ? (side == .left ? cam.maxX : cam.minX) : (side == .left ? cam.maxY : cam.minY)) * k
+        let mid = (horizontal
+            ? (min(cam.minY, screen.minY) + max(cam.maxY, screen.maxY)) / 2
+            : (min(cam.minX, screen.minX) + max(cam.maxX, screen.maxX)) / 2) * k
+        let length = max((horizontal ? max(cam.height, screen.height) : max(cam.width, screen.width)) * k, 1)
+        return Color.clear
+            .frame(width: horizontal ? 14 : max(pairMax - pairMin, 1), height: horizontal ? length : 14)
+            .contentShape(Rectangle())
+            .position(x: horizontal ? seam : mid, y: horizontal ? mid : seam)
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("previewCanvas"))
+                .onChanged { v in
+                    let x = horizontal ? v.location.x : v.location.y
+                    let span = max(pairMax - pairMin, 1)
+                    let along = (x - pairMin) / span
+                    editor.setSplitShare(CameraLayout.clampSplitShare(side == .left ? along : 1 - along), blockID: blockID, side: side)
+                })
+            .pointerStyle(horizontal ? .columnResize : .rowResize)
+            .help("Drag to set how the frame is shared")
     }
 }

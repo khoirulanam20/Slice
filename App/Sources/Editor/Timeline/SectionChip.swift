@@ -20,9 +20,11 @@ struct SectionChip: View {
     let audio: ClipAudio
     @Binding var drag: TrimDrag?
     let snapTime: () -> Double
+    var clipOffset: CGFloat = 0
     let select: () -> Void
     let preview: (Double) -> Void
     let trim: (_ newStart: Double?, _ newEnd: Double?) -> Void
+    var dragBody: ((CGFloat, Bool) -> Void)? = nil
 
     @State private var hovering = false
     @State private var snapTarget: Double?
@@ -94,8 +96,14 @@ struct SectionChip: View {
             .animation(Theme.hover, value: hovering)
             .animation(Theme.hover, value: selected)
             .animation(Theme.hover, value: dimmed)
-            .offset(x: start * pps + 1)
+            .offset(x: start * pps + 1 + clipOffset)
             .onTapGesture(perform: select)
+            .gesture(DragGesture(minimumDistance: 6)
+                .onChanged {
+                    select()
+                    dragBody?($0.translation.width, false)
+                }
+                .onEnded { dragBody?($0.translation.width, true) })
     }
 
     private func ticks(start: Double, length: Double) -> some View {

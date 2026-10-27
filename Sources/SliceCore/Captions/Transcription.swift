@@ -7,10 +7,15 @@
 
 import Foundation
 
-/// The speech recognisers Slice offers. Both run on this Mac; neither sends audio anywhere.
+/// The speech recognisers Slice offers. All run on this Mac; none sends audio anywhere.
+/// `qwen3` is the Bahasa Indonesia model. It appears in Settings when that language is chosen.
 public enum TranscriptionEngineKind: String, CaseIterable, Codable, Sendable, Identifiable {
     case appleSpeech
     case parakeet
+    case qwen3
+
+    /// Engines shown for every language. Bahasa Indonesia adds `qwen3`.
+    public static let selectable: [TranscriptionEngineKind] = [.appleSpeech, .parakeet]
 
     public var id: String { rawValue }
 
@@ -18,6 +23,7 @@ public enum TranscriptionEngineKind: String, CaseIterable, Codable, Sendable, Id
         switch self {
         case .appleSpeech: "Apple Speech"
         case .parakeet: "Parakeet AI"
+        case .qwen3: "Qwen3"
         }
     }
 
@@ -25,7 +31,21 @@ public enum TranscriptionEngineKind: String, CaseIterable, Codable, Sendable, Id
         switch self {
         case .appleSpeech: AppleSpeechEngine()
         case .parakeet: ParakeetEngine.shared
+        case .qwen3: Qwen3Engine.shared
         }
+    }
+}
+
+/// Which recogniser runs for a language. Parakeet only when it was trained on that language. Apple when this Mac
+/// can do it on device. Bahasa Indonesia falls through to Qwen3, which stays on this Mac.
+public enum TranscriptionRouter {
+    public static func route(engine: TranscriptionEngineKind, locale: Locale, appleOnDevice: Bool) -> TranscriptionEngineKind {
+        let code = locale.language.languageCode?.identifier ?? ""
+        if engine == .qwen3, code == "id" { return .qwen3 }
+        if engine == .parakeet, ParakeetModel.languages.contains(code) { return .parakeet }
+        if appleOnDevice { return .appleSpeech }
+        if code == "id" { return .qwen3 }
+        return .appleSpeech
     }
 }
 
@@ -34,11 +54,13 @@ public enum TranscriptionBackend: String, Sendable {
     case speechAnalyzer = "apple-speech-analyzer"
     case speechRecognizer = "apple-speech-recognizer"
     case parakeetUltra = "parakeet-ultra"
+    case qwen3 = "qwen3-asr"
 
     public var displayName: String {
         switch self {
         case .speechAnalyzer, .speechRecognizer: "Apple Speech"
         case .parakeetUltra: "Parakeet AI"
+        case .qwen3: "Qwen3"
         }
     }
 }
@@ -63,6 +85,7 @@ public enum TranscriptionError: LocalizedError, Equatable {
     case recognizerUnavailable
     case notAuthorized
     case modelNotInstalled
+    case qwenNotInstalled
     case failed(String)
 
     public var errorDescription: String? {
@@ -77,6 +100,8 @@ public enum TranscriptionError: LocalizedError, Equatable {
             "Slice isn't allowed to use speech recognition. Allow it in System Settings › Privacy & Security › Speech Recognition, or switch to Parakeet AI."
         case .modelNotInstalled:
             "The Parakeet AI model isn't on this Mac yet. Download it in Settings › Transcription, or switch to Apple Speech."
+        case .qwenNotInstalled:
+            "The Bahasa Indonesia model isn't on this Mac yet. Download it in Settings › Transcription."
         case let .failed(message):
             message
         }

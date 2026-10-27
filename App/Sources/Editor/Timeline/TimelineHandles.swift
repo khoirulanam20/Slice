@@ -109,7 +109,7 @@ struct EdgeHandle: View {
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
             .pointerStyle(.columnResize)
-            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+            .highPriorityGesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { onChanged($0.translation.width) }
                 .onEnded { _ in onEnded() })
     }

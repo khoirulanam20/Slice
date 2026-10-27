@@ -84,17 +84,13 @@ struct EditorView: View {
                     if let url = try? await p.loadItem(forTypeIdentifier: "public.file-url") as? Data,
                        let u = URL(dataRepresentation: url, relativeTo: nil) { urls.append(u) }
                 }
-                if let other = urls.first(where: ProjectBundle.isProject) {
-                    model.openFiles([other])
-                    return
-                }
                 let isAudio: (URL) -> Bool = { UTType(filenameExtension: $0.pathExtension)?.conforms(to: .audio) ?? false }
-                let audio = urls.filter(isAudio)
+                let audio = urls.filter { isAudio($0) && !ProjectBundle.isProject($0) }
                 if !audio.isEmpty {
                     show(.audio)
                     await editor.importMusic(audio)
                 }
-                let videos = urls.filter { !isAudio($0) }
+                let videos = urls.filter { ProjectBundle.isProject($0) || !isAudio($0) }
                 if !videos.isEmpty { await editor.importClips(videos) }
             }
             return true
@@ -288,8 +284,9 @@ func importInto(_ editor: EditorModel) {
 @MainActor
 func chooseVideos() -> [URL]? {
     let panel = NSOpenPanel()
-    panel.allowedContentTypes = [.movie]
+    panel.allowedContentTypes = [.movie, .sliceProject]
     panel.allowsMultipleSelection = true
-    panel.message = "Choose videos to add. They're copied into the project."
+    panel.treatsFilePackagesAsDirectories = false
+    panel.message = "Choose videos or Slice projects to add. They're copied into this project."
     return panel.runModal() == .OK && !panel.urls.isEmpty ? panel.urls : nil
 }

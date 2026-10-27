@@ -109,7 +109,9 @@ struct SelectionInspector: View {
         case let .camera(id):
             if let block = editor.project.cameraBlocks.first(where: { $0.id == id }) {
                 InfoRow(title: "Time", value: "\(format(block.start)) – \(format(block.end))")
-                LayoutPicker(layout: Binding(get: { block.layout }, set: { editor.updateCamera(id, layout: $0) }))
+                LayoutPicker(layout: Binding(get: { block.layout }, set: { editor.updateCamera(id, layout: $0) }),
+                             output: editor.previewSize, frameStyle: editor.project.style,
+                             contentAspect: editor.splitContentAspect)
                 Button("Delete block") { editor.deleteSelection() }.buttonStyle(DestructiveButtonStyle())
             }
         case let .zoom(id):
@@ -123,7 +125,7 @@ struct SelectionInspector: View {
                     InfoRow(title: "From", value: format(seg.sourceStart))
                     InfoRow(title: "To", value: format(seg.sourceEnd))
                     InfoRow(title: "Length", value: format(seg.duration))
-                    PanelNote("Drag the section's edges on the timeline to trim it. Split with ✂︎ at the playhead.")
+                    PanelNote("Drag the take to reorder it. Drag its edges to trim. Split with ✂︎ at the playhead.")
                 }
                 SectionSpeedPicker(editor: editor, segment: seg)
                 if editor.canDeleteSection {

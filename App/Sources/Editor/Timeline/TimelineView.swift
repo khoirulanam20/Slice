@@ -20,6 +20,7 @@ struct TimelineView: View {
     private let inset = CutPin.width / 2 + 2
 
     @State private var trimDrag: TrimDrag?
+    @State private var clipMove: ClipMove?
     @State private var hoveringTakes = false
     @State private var pointer = Pointer()
     @State private var scroll = ScrollPosition()
@@ -217,10 +218,15 @@ struct TimelineView: View {
                             selected: selected == seg, dimmed: selected != nil && selected != seg, tick: tick,
                             clipDuration: clips[seg.clipIndex].duration, audio: audio[seg.clipIndex], drag: $trimDrag,
                             snapTime: { editor.time },
+                            clipOffset: clipMove?.clipIndex == seg.clipIndex ? clipMove!.delta : 0,
                             select: { editor.select(section: seg) },
                             preview: { editor.scrub(to: $0) },
-                            trim: { start, end in editor.trim(seg, newStart: start, newEnd: end) })
+                            trim: { start, end in editor.trim(seg, newStart: start, newEnd: end) },
+                            dragBody: { dx, ended in moveClip(seg.clipIndex, by: dx, pps: pps, ended: ended) })
                     .transition(.asymmetric(insertion: .identity, removal: .opacity))
+            }
+            if let move = clipMove, let x = insertionX(move, pps: pps) {
+                Rectangle().fill(Theme.accent).frame(width: 2, height: clipHeight).offset(x: x - 1).allowsHitTesting(false)
             }
             if trimDrag == nil { transitionMarks(segs: segs, pps: pps).transition(.opacity) }
             if editor.isCutting {
@@ -243,6 +249,44 @@ struct TimelineView: View {
             joinPins(pps: pps)
                 .offset(y: -CutPin.height - 1)
         }
+    }
+
+    private struct ClipMove: Equatable {
+        var clipIndex: Int
+        var delta: CGFloat
+    }
+
+    private func moveClip(_ index: Int, by dx: CGFloat, pps: CGFloat, ended: Bool) {
+        if ended {
+            if let to = dropIndex(from: index, delta: dx, pps: pps), to != index {
+                editor.moveClip(from: index, to: to)
+            }
+            clipMove = nil
+        } else {
+            clipMove = ClipMove(clipIndex: index, delta: dx)
+        }
+    }
+
+    /// Index after the dragged take is lifted. The centre of the dragged take decides which take it passes.
+    private func dropIndex(from: Int, delta: CGFloat, pps: CGFloat) -> Int? {
+        let starts = editor.project.clipStarts
+        let durs = editor.project.clipEditedDurations
+        guard starts.indices.contains(from), pps > 0 else { return nil }
+        let center = starts[from] + durs[from] / 2 + Double(delta) / Double(pps)
+        var index = 0
+        for i in editor.project.clips.indices where i != from {
+            if center > starts[i] + durs[i] / 2 { index += 1 }
+        }
+        return index
+    }
+
+    private func insertionX(_ move: ClipMove, pps: CGFloat) -> CGFloat? {
+        guard let to = dropIndex(from: move.clipIndex, delta: move.delta, pps: pps), to != move.clipIndex else { return nil }
+        let starts = editor.project.clipStarts
+        let boundary = to > move.clipIndex
+            ? (to + 1 < starts.count ? starts[to + 1] : editor.duration)
+            : starts[to]
+        return boundary * pps
     }
 
     private func transitionMarks(segs: [Segment], pps: CGFloat) -> some View {
@@ -319,7 +363,8 @@ struct TimelineView: View {
         switch layout {
         case .hidden: "Hidden"
         case let .centre(c): "Centre \(Int(c * 100))%"
-        case let .split(side): side == .left ? "Split ◧" : "Split ◨"
+        case let .split(side, share):
+            (side == .left ? "Split ◧" : "Split ◨") + (share.map { " \(Int(($0 * 100).rounded()))%" } ?? "")
         case .fullscreen: "Full screen"
         case let .corner(corner, shape, size):
             "\(corner.short) \(shape.rawValue.capitalized) \(size == .small ? "S" : "L")"

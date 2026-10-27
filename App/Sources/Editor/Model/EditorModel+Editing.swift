@@ -77,11 +77,25 @@ extension EditorModel {
         }
         if editChanged {
             resmoothTask?.cancel()
-            cursorLogs = loadCursorLogs()
-            let motion = CursorMotion(project: project, logs: cursorLogs, reusing: cursorTrack.motion)
-            cursorTrack = CursorTrack(project: project, logs: cursorLogs, motion: motion)
-            renderState.update(project: project, cursor: cursorTrack)
-            buildTask = Task { await rebuild() }
+            // Reading logs and smoothing the cursor is slow on long takes; doing it here froze the UI on delete/import/drag.
+            buildTask?.cancel()
+            let snapshot = project, bundle = bundle, previous = cursorTrack.motion
+            let known = cursorLogs.filter { k, _ in snapshot.clips.contains { $0.id == k } }
+            buildTask = Task { [weak self] in
+                let (logs, track) = await Task.detached(priority: .userInitiated) {
+                    var logs = known
+                    var p = snapshot
+                    p.clips = snapshot.clips.filter { $0.cursorFile != nil && logs[$0.id] == nil }
+                    if !p.clips.isEmpty { logs.merge(bundle.loadCursorLogs(for: p)) { $1 } }
+                    let motion = CursorMotion(project: snapshot, logs: logs, reusing: previous)
+                    return (logs, CursorTrack(project: snapshot, logs: logs, motion: motion))
+                }.value
+                guard let self, !Task.isCancelled else { return }
+                cursorLogs = logs
+                cursorTrack = track
+                renderState.update(project: project, cursor: track)
+                await rebuild()
+            }
         } else if old.cursor.smoothing != project.cursor.smoothing
             || (clipsChanged && old.clips.map(\.hoverMoments) != project.clips.map(\.hoverMoments)) {
             renderState.update(project: project)

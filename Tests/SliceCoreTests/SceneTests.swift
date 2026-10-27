@@ -20,6 +20,23 @@ final class SceneTests: XCTestCase {
         return p
     }
 
+    func testSplitShareDecodesTheOldFormAndWidensTheCamera() throws {
+        let old = try JSONDecoder().decode(CameraLayout.self, from: Data(#"{"split":"right"}"#.utf8))
+        guard case .split(.right, nil) = old else { return XCTFail("\(old)") }
+        let style = FrameStyle()
+        let aspect: CGFloat = 3024 / 1964
+        let auto = CameraLayoutResolver.state(for: old, output: out, style: style, contentAspect: aspect)
+        let legacy = CameraLayoutResolver.state(for: .split(.right, share: nil), output: out, style: style, contentAspect: aspect)
+        XCTAssertEqual(auto.rect, legacy.rect)
+        let narrow = CameraLayoutResolver.state(for: .split(.right, share: 0.3), output: out, style: style, contentAspect: aspect)
+        let wide = CameraLayoutResolver.state(for: .split(.right, share: 0.6), output: out, style: style, contentAspect: aspect)
+        XCTAssertGreaterThan(wide.rect.width, narrow.rect.width)
+        let data = try JSONEncoder().encode(CameraLayout.split(.left, share: 0.4))
+        let again = try JSONDecoder().decode(CameraLayout.self, from: data)
+        guard case let .split(.left, share?) = again else { return XCTFail("\(again)") }
+        XCTAssertEqual(share, 0.4, accuracy: 1e-9)
+    }
+
     func testCornerLayoutsStayInsideFrame() {
         for aspect in OutputAspect.allCases {
             let size = aspect.size(shortSide: 1080)

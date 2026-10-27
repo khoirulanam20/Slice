@@ -84,7 +84,7 @@ final class RenderTests: XCTestCase {
         p.clips = [Clip(screenFile: "s.mov", duration: 30, screenPixelSize: CGSize(width: 3024, height: 1964),
                         captureRect: .zero)]
         p.defaultCamera = .corner(.bottomRight, .square, .small)
-        p.cameraBlocks = [CameraBlock(start: 5, end: 12, layout: .split(.right)),
+        p.cameraBlocks = [CameraBlock(start: 5, end: 12, layout: .split(.right, share: nil)),
                           CameraBlock(start: 12, end: 18, layout: .fullscreen)]
         p.zoomBlocks = [ZoomBlock(start: 8, end: 11, scale: 2, focus: CGPoint(x: 0.3, y: 0.3))]
         let screen = Self.fakeScreen(size: CGSize(width: 3024, height: 1964))

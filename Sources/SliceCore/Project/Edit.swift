@@ -149,6 +149,51 @@ extension Project {
         return clips.indices.map { i in segs.filter { $0.clipIndex == i }.reduce(0) { $0 + $1.duration } }
     }
 
+    /// `to` is the index after the clip has been lifted out. Per-clip edits stay with the clip. Timeline blocks that
+    /// sit inside one take move with it; a block that straddles two takes and would invert is dropped. Music stays put.
+    public mutating func moveClip(from: Int, to: Int) {
+        guard clips.indices.contains(from), clips.indices.contains(to), from != to else { return }
+        let oldIDs = clips.map(\.id)
+        let oldStarts = clipStarts
+        let oldDurs = clipEditedDurations
+        let oldEnd = duration
+        var oldRange: [UUID: Range<Double>] = [:]
+        for i in clips.indices { oldRange[oldIDs[i]] = oldStarts[i] ..< (oldStarts[i] + oldDurs[i]) }
+        let clip = clips.remove(at: from)
+        clips.insert(clip, at: to)
+        let newIDs = clips.map(\.id)
+        let newStarts = clipStarts
+        let newDurs = clipEditedDurations
+        var newRange: [UUID: Range<Double>] = [:]
+        for i in clips.indices { newRange[newIDs[i]] = newStarts[i] ..< (newStarts[i] + newDurs[i]) }
+        func mapTime(_ t: Double) -> Double {
+            if t >= oldEnd - 1e-6,
+               let id = oldIDs.last(where: { (oldRange[$0]?.upperBound ?? 0) >= oldEnd - 1e-4 }),
+               let n = newRange[id] {
+                return n.upperBound
+            }
+            if let id = oldIDs.first(where: { oldRange[$0]?.contains(t) == true }),
+               let o = oldRange[id], let n = newRange[id] {
+                return n.lowerBound + (t - o.lowerBound)
+            }
+            return t
+        }
+        func remap(_ start: Double, _ end: Double) -> (Double, Double)? {
+            let a = mapTime(start), b = mapTime(end)
+            return b - a > 1e-4 ? (a, b) : nil
+        }
+        cameraBlocks = cameraBlocks.compactMap { b in remap(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
+        zoomBlocks = zoomBlocks.compactMap { b in remap(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
+        redactions = redactions.compactMap { b in remap(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
+        spotlights = spotlights.compactMap { b in remap(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
+        annotations = annotations.compactMap { b in remap(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
+        device3D.keyframes = device3D.keyframes.map { k in
+            var k = k
+            k.time = mapTime(k.time)
+            return k
+        }.sorted { $0.time < $1.time }
+    }
+
     public func editedTime(clipIndex: Int, local: Double) -> Double? {
         segment(clipIndex: clipIndex, local: local)?.edited(local: local)
     }

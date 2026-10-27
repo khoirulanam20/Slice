@@ -107,11 +107,17 @@ struct BarShadow: View {
 }
 
 @available(macOS 26, *)
+final class DragGlassView: NSGlassEffectView {
+    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
+}
+
+@available(macOS 26, *)
 struct GlassBackground: NSViewRepresentable {
     let cornerRadius: CGFloat
 
     func makeNSView(context: Context) -> NSGlassEffectView {
-        let view = NSGlassEffectView()
+        let view = DragGlassView()
         view.cornerRadius = cornerRadius
         view.style = .regular
         return view
@@ -122,11 +128,16 @@ struct GlassBackground: NSViewRepresentable {
     }
 }
 
+final class DragVisualEffect: NSVisualEffectView {
+    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
+}
+
 struct VisualEffectBackground: NSViewRepresentable {
     let material: NSVisualEffectView.Material
 
     func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
+        let view = DragVisualEffect()
         view.material = material
         view.blendingMode = .behindWindow
         view.state = .active

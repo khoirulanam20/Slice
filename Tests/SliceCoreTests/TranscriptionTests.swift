@@ -127,6 +127,14 @@ final class TranscriptionTests: XCTestCase {
         XCTAssertEqual(round.engine, "parakeet-ultra")
     }
 
+    func testIndonesianDoesNotUseParakeetAndEnglishDoesNotUseQwen() {
+        XCTAssertEqual(TranscriptionRouter.route(engine: .parakeet, locale: Locale(identifier: "id-ID"), appleOnDevice: false), .qwen3)
+        XCTAssertEqual(TranscriptionRouter.route(engine: .parakeet, locale: Locale(identifier: "en"), appleOnDevice: false), .parakeet)
+        XCTAssertEqual(TranscriptionRouter.route(engine: .appleSpeech, locale: Locale(identifier: "en"), appleOnDevice: true), .appleSpeech)
+        XCTAssertEqual(TranscriptionRouter.route(engine: .parakeet, locale: Locale(identifier: "id-ID"), appleOnDevice: true), .appleSpeech)
+        XCTAssertEqual(TranscriptionRouter.route(engine: .qwen3, locale: Locale(identifier: "id-ID"), appleOnDevice: true), .qwen3)
+    }
+
     func testParakeetRefusesLanguagesItWasNotTrainedOn() async {
         do {
             _ = try await ParakeetEngine.shared.transcribe(audio: URL(fileURLWithPath: "/nonexistent.m4a"), locale: Locale(identifier: "ja-JP")) { _ in }

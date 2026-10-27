@@ -92,6 +92,7 @@ struct BarWindowConfigurator: NSViewRepresentable {
             window.backgroundColor = .clear
             window.hasShadow = false
             window.level = AnnotationController.shared.barLevel
+            window.isMovable = true
             window.isMovableByWindowBackground = true
             window.collectionBehavior.formUnion([.canJoinAllSpaces, .fullScreenAuxiliary])
             window.appearance = NSAppearance(named: .darkAqua)

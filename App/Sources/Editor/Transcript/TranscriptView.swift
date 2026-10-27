@@ -16,7 +16,7 @@ struct TranscriptView: View {
 
     @AppStorage(TranscriptionPreferences.engineKey) private var engine: TranscriptionEngineKind = .appleSpeech
 
-    private var language: String { Locale.current.languageName }
+    private var language: String { TranscriptionPreferences.locale.languageName }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -160,6 +160,11 @@ struct TranscriptBar: View {
                     .lineLimit(1)
                     .padding(.leading, 8)
                 Spacer(minLength: 4)
+                if editor.transcriptLocaleMismatch {
+                    Button { editor.retranscribe() } label: { Label("Transcribe again", systemImage: "waveform") }
+                        .buttonStyle(PillButtonStyle())
+                        .help("Write the transcript again in \(TranscriptionPreferences.locale.languageName)")
+                }
                 if newTakes {
                     Button { editor.transcribe() } label: { Label("New takes", systemImage: "waveform") }
                         .buttonStyle(PillButtonStyle())

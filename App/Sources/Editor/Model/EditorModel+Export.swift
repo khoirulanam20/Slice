@@ -12,15 +12,34 @@ import SwiftUI
 extension EditorModel {
     func importClips(_ urls: [URL]) async {
         var added: [Clip] = []
+        var cuts: [Cut] = []
+        var splits: [Split] = []
+        var speeds: [SpeedRange] = []
+        var transitions: [ClipTransition] = []
         for url in urls {
             do {
-                added.append(try await ClipImporter.importVideo(url, into: bundle))
+                if ProjectBundle.isProject(url) {
+                    let imported = try await ClipImporter.importProject(ProjectBundle(opening: url), into: bundle)
+                    added += imported.clips
+                    cuts += imported.cuts
+                    splits += imported.splits
+                    speeds += imported.speeds
+                    transitions += imported.transitions
+                } else {
+                    added.append(try await ClipImporter.importVideo(url, into: bundle))
+                }
             } catch {
                 transcribeError = "Couldn't import \(url.lastPathComponent): \(error.localizedDescription)"
             }
         }
         guard !added.isEmpty else { return }
-        project.clips += added
+        var p = project
+        p.clips += added
+        p.cuts += cuts
+        p.splits += splits
+        p.speeds += speeds
+        p.transitions += transitions
+        project = Self.withImportedAnnotations(p, logs: bundle.loadCursorLogs(for: p))
         saveNow()
         scanSpeech()
     }

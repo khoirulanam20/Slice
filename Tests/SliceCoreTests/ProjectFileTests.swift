@@ -55,6 +55,23 @@ final class ProjectFileTests: XCTestCase {
         XCTAssertTrue(opened.isWritable)
     }
 
+    func testImportProjectCopiesTakesAndLeavesSourceAlone() async throws {
+        let (source, saved) = try editedProject()
+        let sourceJSON = try Data(contentsOf: source.projectURL)
+        let (dest, _) = try ProjectBundle.create(name: "Other", in: dir)
+        let imported = try await ClipImporter.importProject(source, into: dest)
+        XCTAssertEqual(imported.clips.count, 1)
+        XCTAssertNotEqual(imported.clips[0].id, saved.clips[0].id)
+        XCTAssertNil(imported.clips[0].annotationsImported)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.file(imported.clips[0].screenFile).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.file(imported.clips[0].cursorFile!).path))
+        XCTAssertEqual(imported.cuts.map(\.clipID), [imported.clips[0].id])
+        XCTAssertEqual(imported.cuts[0].start, 6)
+        XCTAssertEqual(try Data(contentsOf: source.projectURL), sourceJSON)
+        let ignored = try await ClipImporter.importProject(source, into: source)
+        XCTAssertTrue(ignored.clips.isEmpty)
+    }
+
     func testCopyPicksFreeName() throws {
         let (bundle, _) = try editedProject()
         let copy = try bundle.copy(into: dir)
